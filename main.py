@@ -5,8 +5,10 @@ Pairs    : All configured symbols traded simultaneously each hour
 Risk     : 1% per trade, 3% daily loss limit (account-wide)
 
 Usage:
-  python main.py           # continuous loop (VPS / local)
-  python main.py --once    # single pass then exit (GitHub Actions cron)
+  python main.py            # continuous loop (VPS / local)
+  python main.py --once     # single pass then exit (GitHub Actions cron)
+  python main.py --dry-run  # full pass, real signals, NO orders placed
+  python main.py --check    # connection + data test only, then exit
 """
 import logging
 import sys
@@ -19,7 +21,7 @@ from config import (
     CANDLE_COUNT, LOOP_INTERVAL,
 )
 from bot.broker import CapitalComClient
-from bot.strategy import build_dataframe, check_signal
+from bot.strategy import build_dataframe, check_signal, calculate_indicators
 from bot.risk import RiskManager
 from bot.utils import (
     setup_logging,
@@ -39,10 +41,13 @@ _MAX_CONSECUTIVE_ERRORS = 10
 _SYMBOL_DELAY = 1.0   # seconds between symbol API calls (rate-limit buffer)
 
 
-def _single_pass(client: "CapitalComClient", risk: "RiskManager") -> bool:
+# ── Core evaluation loop ─────────────────────────────────────────────────────
+
+def _single_pass(client: "CapitalComClient", risk: "RiskManager", dry_run: bool = False) -> bool:
     """Evaluate every symbol once. Returns True on success, False on hard failure."""
-    logger.info("=== %s  |  %d pairs ===",
-                datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"), len(SYMBOLS))
+    tag = "[DRY RUN] " if dry_run else ""
+    logger.info("%s=== %s  |  %d pairs ===",
+                tag, datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"), len(SYMBOLS))
 
     if not is_forex_market_open():
         logger.info("Market closed (weekend). Nothing to do.")
@@ -80,30 +85,37 @@ def _single_pass(client: "CapitalComClient", risk: "RiskManager") -> bool:
                 size = risk.calculate_position_size(balance, symbol)
 
                 if size:
-                    result = client.place_order(
-                        epic=symbol,
-                        direction=signal,
-                        size=size,
-                        stop_distance=sl,
-                        profit_distance=tp,
-                    )
-
-                    if result:
+                    if dry_run:
                         entry = df.iloc[-1]["close"] if df is not None else 0.0
-                        deal_ref = result.get("dealReference", "")
-
-                        log_trade(
-                            epic=symbol,
-                            direction=signal,
-                            size=size,
-                            entry_price=entry,
-                            stop_pips=sl,
-                            tp_pips=tp,
-                            deal_ref=deal_ref,
+                        logger.info(
+                            "[DRY RUN] WOULD PLACE: %s %s  size=%d  entry=%.5f  SL=%d  TP=%d",
+                            signal, symbol, size, entry, sl, tp,
                         )
-                        notify_trade(signal, symbol, size, entry, sl, tp)
+                        log_trade(
+                            epic=symbol, direction=signal, size=size,
+                            entry_price=entry, stop_pips=sl, tp_pips=tp,
+                            deal_ref="DRY_RUN", status="DRY_RUN",
+                            notes="dry-run — no order placed",
+                        )
+                        notify_trade(signal, symbol, size, entry, sl, tp, dry_run=True)
                         risk.record_trade(symbol)
-                        trades_placed.append(f"{signal} {symbol}")
+                        trades_placed.append(f"[DRY] {signal} {symbol}")
+                    else:
+                        result = client.place_order(
+                            epic=symbol, direction=signal, size=size,
+                            stop_distance=sl, profit_distance=tp,
+                        )
+                        if result:
+                            entry    = df.iloc[-1]["close"] if df is not None else 0.0
+                            deal_ref = result.get("dealReference", "")
+                            log_trade(
+                                epic=symbol, direction=signal, size=size,
+                                entry_price=entry, stop_pips=sl, tp_pips=tp,
+                                deal_ref=deal_ref,
+                            )
+                            notify_trade(signal, symbol, size, entry, sl, tp)
+                            risk.record_trade(symbol)
+                            trades_placed.append(f"{signal} {symbol}")
 
         except Exception as exc:
             logger.error("Error on %s: %s", symbol, exc, exc_info=True)
@@ -111,11 +123,104 @@ def _single_pass(client: "CapitalComClient", risk: "RiskManager") -> bool:
         time.sleep(_SYMBOL_DELAY)
 
     if trades_placed:
-        logger.info("Trades this pass: %s", " | ".join(trades_placed))
+        logger.info("%sTrades this pass: %s", tag, " | ".join(trades_placed))
     else:
-        logger.info("No trades placed this pass")
+        logger.info("%sNo trades placed this pass", tag)
 
     return True
+
+
+# ── Modes ────────────────────────────────────────────────────────────────────
+
+def check_connection() -> None:
+    """
+    --check: verify API connection, auth, balance, and candle fetch.
+    Touches nothing — read-only. Safe to run at any time.
+    """
+    print("\n" + "=" * 55)
+    print("  Capital.com Connection Check")
+    print("=" * 55)
+
+    client = CapitalComClient()
+
+    # 1. Authentication
+    print("\n[1/4] Authenticating...")
+    if not client.authenticate():
+        print("  FAIL  Could not authenticate.")
+        print("        Check CAPITAL_API_KEY, CAPITAL_EMAIL, CAPITAL_PASSWORD in .env")
+        sys.exit(1)
+    print("  OK    Authenticated successfully")
+
+    # 2. Balance
+    print("\n[2/4] Fetching account balance...")
+    balance = client.get_balance()
+    if balance is None:
+        print("  FAIL  Could not fetch balance")
+        sys.exit(1)
+    print(f"  OK    Balance: {balance:,.2f}")
+
+    # 3. Candle fetch for each pair
+    print(f"\n[3/4] Fetching candles for all {len(SYMBOLS)} pairs...")
+    failed = []
+    for symbol in SYMBOLS:
+        candles = client.get_candles(symbol, TIMEFRAME, 10)
+        if candles:
+            df   = build_dataframe(candles)
+            last = df.iloc[-1]["close"] if df is not None else 0
+            print(f"  OK    {symbol:<10}  latest close = {last:.5f}  ({len(candles)} candles)")
+        else:
+            print(f"  FAIL  {symbol:<10}  no data returned")
+            failed.append(symbol)
+    if failed:
+        print(f"\n  WARNING: {len(failed)} pair(s) failed: {failed}")
+        print("  They may not be available on your Capital.com account/region.")
+
+    # 4. Open positions
+    print("\n[4/4] Checking open positions...")
+    positions = client.get_open_positions()
+    print(f"  OK    {len(positions)} open position(s)")
+    for p in positions:
+        epic  = p.get("market",   {}).get("epic",      "?")
+        dirn  = p.get("position", {}).get("direction", "?")
+        size  = p.get("position", {}).get("size",       0)
+        pnl   = p.get("position", {}).get("profit",     0)
+        print(f"        {dirn} {size} {epic}  P&L: {pnl:+.2f}")
+
+    print("\n" + "=" * 55)
+    print("  All checks passed. Bot is ready to trade.")
+    print("=" * 55 + "\n")
+
+
+def run_dry_run() -> None:
+    """
+    --dry-run: full signal evaluation across all pairs, NO orders placed.
+    Use this to verify signals, sizing, and Telegram before going live.
+    """
+    logger.info("=" * 60)
+    logger.info("[DRY RUN]  %d pairs  |  env=%s  |  NO ORDERS WILL BE PLACED",
+                len(SYMBOLS), CAPITAL_ENV)
+    logger.info("Pairs: %s", ", ".join(SYMBOLS))
+    logger.info("=" * 60)
+
+    client = CapitalComClient()
+    risk   = RiskManager()
+
+    if not client.authenticate():
+        logger.critical("Authentication failed. Exiting.")
+        sys.exit(1)
+
+    balance = client.get_balance()
+    if balance is not None:
+        risk.set_start_balance(balance)
+        logger.info("Balance: %.2f", balance)
+
+    try:
+        _single_pass(client, risk, dry_run=True)
+    except Exception as exc:
+        logger.error("Dry-run error: %s", exc, exc_info=True)
+        sys.exit(1)
+
+    logger.info("[DRY RUN] Complete. Check bot.log and trades.csv for results.")
 
 
 def run_once() -> None:
@@ -178,8 +283,8 @@ def run_bot() -> None:
             _single_pass(client, risk)
             consecutive_errors = 0
 
-            elapsed    = (datetime.now(timezone.utc) - loop_ts).seconds
-            sleep_for  = max(LOOP_INTERVAL - elapsed, 60)
+            elapsed   = (datetime.now(timezone.utc) - loop_ts).seconds
+            sleep_for = max(LOOP_INTERVAL - elapsed, 60)
             logger.info("Next check in %ds", sleep_for)
             time.sleep(sleep_for)
 
@@ -195,10 +300,8 @@ def run_bot() -> None:
                 consecutive_errors, _MAX_CONSECUTIVE_ERRORS, exc,
                 exc_info=True,
             )
-
             if consecutive_errors <= 3:
                 notify_error(str(exc))
-
             if consecutive_errors >= _MAX_CONSECUTIVE_ERRORS:
                 msg = f"Halted after {_MAX_CONSECUTIVE_ERRORS} consecutive errors"
                 logger.critical(msg)
@@ -210,8 +313,15 @@ def run_bot() -> None:
             time.sleep(backoff)
 
 
+# ── Entry point ───────────────────────────────────────────────────────────────
+
 if __name__ == "__main__":
-    if "--once" in sys.argv:
+    args = sys.argv[1:]
+    if "--check"   in args:
+        check_connection()
+    elif "--dry-run" in args:
+        run_dry_run()
+    elif "--once"    in args:
         run_once()
     else:
         run_bot()
