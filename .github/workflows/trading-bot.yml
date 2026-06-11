@@ -1,0 +1,84 @@
+name: Forex Trading Bot
+
+on:
+  schedule:
+    # Runs at the top of every hour, 24/7
+    # NOTE: GitHub only triggers scheduled workflows from the DEFAULT BRANCH (main/master)
+    - cron: '0 * * * *'
+
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Run mode'
+        required: true
+        default: 'dry-run'
+        type: choice
+        options:
+          - check       # test connection & candles only — no orders
+          - dry-run     # real signals, no orders placed
+          - once        # real signals + real orders (demo or live)
+
+jobs:
+  trade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15   # 12 pairs × ~1s each + processing headroom
+
+    steps:
+      # ── 1. Get the code ──────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.REPO_TOKEN || secrets.GITHUB_TOKEN }}
+
+      # ── 2. Python environment ────────────────────────────────────
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # ── 3. Create .env ───────────────────────────────────────────
+      - name: Create .env
+        run: |
+          cat > .env << 'EOF'
+          CAPITAL_API_KEY=4zHeGVsejC9qcx8r
+          CAPITAL_EMAIL=osabuohiensamuel360@gmail.com
+          CAPITAL_PASSWORD=George360..
+          CAPITAL_ENV=demo
+          SYMBOLS=EURUSD,GBPUSD,AUDUSD,NZDUSD,USDCAD,USDCHF,USDJPY,EURJPY,GBPJPY,GOLD,US100,US30
+          TIMEFRAME=HOUR
+          RISK_PER_TRADE=0.01
+          MAX_TRADES_PER_DAY=0
+          DAILY_LOSS_LIMIT=0.03
+          TELEGRAM_BOT_TOKEN=
+          TELEGRAM_CHAT_ID=
+          EOF
+
+      # ── 4. Run the bot ───────────────────────────────────────────
+      # Scheduled runs always use --once (real trades)
+      # Manual runs use whichever mode you picked in the dropdown
+      - name: Run bot
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "Scheduled run → --once"
+            python main.py --once
+          else
+            MODE="${{ github.event.inputs.mode }}"
+            echo "Manual run → --${MODE}"
+            python main.py --${MODE}
+          fi
+
+      # ── 5. Upload logs as artifact (kept 30 days) ────────────────
+      - name: Upload run logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bot-logs-${{ github.run_number }}
+          path: |
+            bot.log
+            trades.csv
+          retention-days: 30
+          if-no-files-found: ignore

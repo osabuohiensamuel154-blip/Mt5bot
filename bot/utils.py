@@ -92,10 +92,14 @@ def notify_startup(symbol: str, env: str) -> None:
     )
 
 
-def notify_trade(direction: str, epic: str, size: int, entry: float, sl: int, tp: int) -> None:
-    label = "BUY" if direction == "BUY" else "SELL"
+def notify_trade(
+    direction: str, epic: str, size: int, entry: float, sl: int, tp: int,
+    dry_run: bool = False,
+) -> None:
+    label  = "BUY" if direction == "BUY" else "SELL"
+    prefix = "[DRY RUN] Would place" if dry_run else "Signal Executed"
     _send_telegram(
-        f"<b>{label} Signal Executed</b>\n"
+        f"<b>{label} {prefix}</b>\n"
         f"Pair:  {epic}\n"
         f"Size:  {size} units\n"
         f"Entry: {entry:.5f}\n"

@@ -1,0 +1,55 @@
+name: Demo Connection Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: claude/forex-bot-production-ss84vc
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Create .env
+        run: |
+          cat > .env << 'EOF'
+          CAPITAL_API_KEY=4zHeGVsejC9qcx8r
+          CAPITAL_EMAIL=osabuohiensamuel360@gmail.com
+          CAPITAL_PASSWORD=George360..
+          CAPITAL_ENV=demo
+          SYMBOLS=EURUSD,GBPUSD,AUDUSD,NZDUSD,USDCAD,USDCHF,USDJPY,EURJPY,GBPJPY,GOLD,US100,US30
+          TIMEFRAME=HOUR
+          RISK_PER_TRADE=0.01
+          DAILY_LOSS_LIMIT=0.03
+          MAX_TRADES_PER_DAY=0
+          EOF
+
+      - name: "Step 1 -- Connection check"
+        run: python main.py --check
+
+      - name: "Step 2 -- Dry run (real signals, zero orders)"
+        run: python main.py --dry-run
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: demo-test-logs
+          path: |
+            bot.log
+            trades.csv
+          retention-days: 7
+          if-no-files-found: ignore
