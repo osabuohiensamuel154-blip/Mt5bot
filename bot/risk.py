@@ -72,6 +72,8 @@ class RiskManager:
         return True
 
     def _max_trades_ok(self) -> bool:
+        if MAX_TRADES_PER_DAY == 0:
+            return True  # unlimited — strategy quality is the only gate
         if self.trades_today >= MAX_TRADES_PER_DAY:
             logger.info("Max trades/day reached (%d). Skipping.", MAX_TRADES_PER_DAY)
             return False
@@ -106,4 +108,5 @@ class RiskManager:
 
     def record_trade(self) -> None:
         self.trades_today += 1
-        logger.info("Trades today: %d / %d", self.trades_today, MAX_TRADES_PER_DAY)
+        cap = str(MAX_TRADES_PER_DAY) if MAX_TRADES_PER_DAY else "∞"
+        logger.info("Trades today: %d / %s", self.trades_today, cap)
