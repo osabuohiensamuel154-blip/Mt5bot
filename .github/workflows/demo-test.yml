@@ -23,6 +23,13 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: DNS + connectivity check
+        run: |
+          echo '=== DNS check ==='
+          nslookup api.capital.com || true
+          echo '=== HTTP ping ==='
+          curl -s -o /dev/null -w 'HTTP %{http_code}\n' https://api.capital.com/api/v1/session || true
+
       - name: Create .env
         run: |
           cat > .env << 'EOF'
