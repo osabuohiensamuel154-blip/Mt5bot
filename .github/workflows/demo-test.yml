@@ -25,10 +25,10 @@ jobs:
 
       - name: Create .env
         run: |
-          cat > .env <<EOF
-          CAPITAL_API_KEY=${{ secrets.CAPITAL_API_KEY }}
-          CAPITAL_EMAIL=${{ secrets.CAPITAL_EMAIL }}
-          CAPITAL_PASSWORD=${{ secrets.CAPITAL_PASSWORD }}
+          cat > .env << 'EOF'
+          CAPITAL_API_KEY=JESAjv4ONjdcGSYR
+          CAPITAL_EMAIL=osabuohiensamuel360@gmail.com
+          CAPITAL_PASSWORD=George360.
           CAPITAL_ENV=demo
           SYMBOLS=EURUSD,GBPUSD,AUDUSD,NZDUSD,USDCAD,USDCHF,USDJPY,EURJPY,GBPJPY,XAUUSD,US100,US30
           TIMEFRAME=HOUR
@@ -37,10 +37,10 @@ jobs:
           MAX_TRADES_PER_DAY=0
           EOF
 
-      - name: Step 1 — Connection check
+      - name: "Step 1 -- Connection check"
         run: python main.py --check
 
-      - name: Step 2 — Dry run (real signals, zero orders)
+      - name: "Step 2 -- Dry run (real signals, zero orders)"
         run: python main.py --dry-run
 
       - name: Upload logs
