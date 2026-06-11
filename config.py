@@ -3,10 +3,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-CAPITAL_API_KEY = os.getenv("CAPITAL_API_KEY", "")
-CAPITAL_EMAIL   = os.getenv("CAPITAL_EMAIL", "")
-CAPITAL_PASSWORD = os.getenv("CAPITAL_PASSWORD", "")
-CAPITAL_ENV     = os.getenv("CAPITAL_ENV", "demo")
+CAPITAL_API_KEY    = os.getenv("CAPITAL_API_KEY", "")
+CAPITAL_EMAIL      = os.getenv("CAPITAL_EMAIL", "")
+CAPITAL_PASSWORD   = os.getenv("CAPITAL_PASSWORD", "")
+CAPITAL_ENV        = os.getenv("CAPITAL_ENV", "demo")
+CAPITAL_ACCOUNT_ID = os.getenv("CAPITAL_ACCOUNT_ID", "")
 
 # Capital.com API base URLs differ by environment.
 _BASE_URLS = {
