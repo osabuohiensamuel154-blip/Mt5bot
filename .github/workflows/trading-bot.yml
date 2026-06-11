@@ -3,10 +3,20 @@ name: Forex Trading Bot
 on:
   schedule:
     # Runs at the top of every hour, 24/7
-    # GitHub Actions only runs scheduled workflows from the DEFAULT BRANCH (main/master)
+    # NOTE: GitHub only triggers scheduled workflows from the DEFAULT BRANCH (main/master)
     - cron: '0 * * * *'
+
   workflow_dispatch:
-    # Allows you to trigger a manual run from the GitHub Actions tab at any time
+    inputs:
+      mode:
+        description: 'Run mode'
+        required: true
+        default: 'dry-run'
+        type: choice
+        options:
+          - check       # test connection & candles only — no orders
+          - dry-run     # real signals, no orders placed
+          - once        # real signals + real orders (demo or live)
 
 jobs:
   trade:
@@ -18,8 +28,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          # Use a PAT (REPO_TOKEN) so we can push the trade log back.
-          # Falls back to the built-in GITHUB_TOKEN (read-only for pushes on some plans).
           token: ${{ secrets.REPO_TOKEN || secrets.GITHUB_TOKEN }}
 
       # ── 2. Python environment ────────────────────────────────────
@@ -49,13 +57,23 @@ jobs:
           TELEGRAM_CHAT_ID=${{ secrets.TELEGRAM_CHAT_ID }}
           EOF
 
-      # ── 4. Run the bot (single pass) ─────────────────────────────
-      - name: Run bot — single pass
-        run: python main.py --once
+      # ── 4. Run the bot ───────────────────────────────────────────
+      # Scheduled runs always use --once (real trades)
+      # Manual runs use whichever mode you picked in the dropdown
+      - name: Run bot
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "Scheduled run → --once"
+            python main.py --once
+          else
+            MODE="${{ github.event.inputs.mode }}"
+            echo "Manual run → --${MODE}"
+            python main.py --${MODE}
+          fi
 
       # ── 5. Persist the trade log back to the repo ────────────────
       - name: Commit updated trade log
-        if: always()   # run even if the bot step failed
+        if: always()
         run: |
           git config user.name  "Trading Bot"
           git config user.email "bot@noreply.github.com"
@@ -63,7 +81,7 @@ jobs:
           git diff --staged --quiet && echo "No new trades to commit" || \
             git commit -m "chore: update trades.csv [skip ci]" && git push
 
-      # ── 6. Upload logs as an artifact (last 30 days) ─────────────
+      # ── 6. Upload logs as artifact (kept 30 days) ────────────────
       - name: Upload run logs
         if: always()
         uses: actions/upload-artifact@v4
