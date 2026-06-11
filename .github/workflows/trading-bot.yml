@@ -11,7 +11,7 @@ on:
 jobs:
   trade:
     runs-on: ubuntu-latest
-    timeout-minutes: 10   # hard kill if the bot hangs
+    timeout-minutes: 15   # 12 pairs × ~1s each + processing headroom
 
     steps:
       # ── 1. Get the code ──────────────────────────────────────────
@@ -40,12 +40,10 @@ jobs:
           CAPITAL_EMAIL=${{ secrets.CAPITAL_EMAIL }}
           CAPITAL_PASSWORD=${{ secrets.CAPITAL_PASSWORD }}
           CAPITAL_ENV=${{ secrets.CAPITAL_ENV }}
-          SYMBOL=${{ vars.SYMBOL || 'EURUSD' }}
+          SYMBOLS=${{ vars.SYMBOLS || 'EURUSD,GBPUSD,AUDUSD,NZDUSD,USDCAD,USDCHF,USDJPY,EURJPY,GBPJPY,XAUUSD,US100,US30' }}
           TIMEFRAME=${{ vars.TIMEFRAME || 'HOUR' }}
           RISK_PER_TRADE=${{ vars.RISK_PER_TRADE || '0.01' }}
-          STOP_LOSS_PIPS=${{ vars.STOP_LOSS_PIPS || '20' }}
-          TAKE_PROFIT_PIPS=${{ vars.TAKE_PROFIT_PIPS || '40' }}
-          MAX_TRADES_PER_DAY=${{ vars.MAX_TRADES_PER_DAY || '3' }}
+          MAX_TRADES_PER_DAY=${{ vars.MAX_TRADES_PER_DAY || '0' }}
           DAILY_LOSS_LIMIT=${{ vars.DAILY_LOSS_LIMIT || '0.03' }}
           TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID=${{ secrets.TELEGRAM_CHAT_ID }}

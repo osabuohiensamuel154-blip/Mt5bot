@@ -1,7 +1,8 @@
 """
 Forex Strategy Bot — Capital.com
 Strategy : EMA50 / EMA200 + RSI pullback (H1)
-Risk     : 1% per trade, 3% daily loss limit
+Pairs    : All configured symbols traded simultaneously each hour
+Risk     : 1% per trade, 3% daily loss limit (account-wide)
 
 Usage:
   python main.py           # continuous loop (VPS / local)
@@ -13,8 +14,8 @@ import time
 from datetime import datetime, timezone
 
 from config import (
-    CAPITAL_ENV, SYMBOL, TIMEFRAME,
-    STOP_LOSS_PIPS, TAKE_PROFIT_PIPS,
+    CAPITAL_ENV, SYMBOLS, TIMEFRAME,
+    SL_PIPS, TP_PIPS, DEFAULT_SL_PIPS, DEFAULT_TP_PIPS,
     CANDLE_COUNT, LOOP_INTERVAL,
 )
 from bot.broker import CapitalComClient
@@ -35,11 +36,13 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 _MAX_CONSECUTIVE_ERRORS = 10
+_SYMBOL_DELAY = 1.0   # seconds between symbol API calls (rate-limit buffer)
 
 
 def _single_pass(client: "CapitalComClient", risk: "RiskManager") -> bool:
-    """Run one evaluation cycle. Returns True on success, False on hard failure."""
-    logger.info("--- %s ---", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"))
+    """Evaluate every symbol once. Returns True on success, False on hard failure."""
+    logger.info("=== %s  |  %d pairs ===",
+                datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"), len(SYMBOLS))
 
     if not is_forex_market_open():
         logger.info("Market closed (weekend). Nothing to do.")
@@ -56,56 +59,75 @@ def _single_pass(client: "CapitalComClient", risk: "RiskManager") -> bool:
     if not risk._daily_loss_ok(balance):
         loss_pct = (risk.daily_start_balance - balance) / risk.daily_start_balance
         notify_daily_limit_hit(loss_pct)
-        logger.info("Daily loss limit active. Skipping.")
+        logger.info("Daily loss limit active — skipping all pairs.")
         return True
 
-    candles = client.get_candles(SYMBOL, TIMEFRAME, CANDLE_COUNT)
-    df = build_dataframe(candles)
-    signal = check_signal(df)
-    logger.info("Signal: %s", signal)
-
+    # Fetch open positions once; shared across all symbol checks this pass
     open_positions = client.get_open_positions()
+    trades_placed: list[str] = []
 
-    if risk.can_trade(signal, balance, open_positions):
-        size = risk.calculate_position_size(balance, SYMBOL)
+    for symbol in SYMBOLS:
+        logger.info("── %s ──", symbol)
+        try:
+            candles = client.get_candles(symbol, TIMEFRAME, CANDLE_COUNT)
+            df      = build_dataframe(candles)
+            signal  = check_signal(df)
+            logger.info("%s  →  %s", symbol, signal)
 
-        if size:
-            result = client.place_order(
-                epic=SYMBOL,
-                direction=signal,
-                size=size,
-                stop_distance=STOP_LOSS_PIPS,
-                profit_distance=TAKE_PROFIT_PIPS,
-            )
+            if risk.can_trade(signal, balance, open_positions, epic=symbol):
+                sl   = SL_PIPS.get(symbol, DEFAULT_SL_PIPS)
+                tp   = TP_PIPS.get(symbol, DEFAULT_TP_PIPS)
+                size = risk.calculate_position_size(balance, symbol)
 
-            if result:
-                entry_price = df.iloc[-1]["close"] if df is not None else 0.0
-                deal_ref = result.get("dealReference", "")
+                if size:
+                    result = client.place_order(
+                        epic=symbol,
+                        direction=signal,
+                        size=size,
+                        stop_distance=sl,
+                        profit_distance=tp,
+                    )
 
-                log_trade(
-                    epic=SYMBOL,
-                    direction=signal,
-                    size=size,
-                    entry_price=entry_price,
-                    stop_pips=STOP_LOSS_PIPS,
-                    tp_pips=TAKE_PROFIT_PIPS,
-                    deal_ref=deal_ref,
-                )
-                notify_trade(signal, SYMBOL, size, entry_price, STOP_LOSS_PIPS, TAKE_PROFIT_PIPS)
-                risk.record_trade()
+                    if result:
+                        entry = df.iloc[-1]["close"] if df is not None else 0.0
+                        deal_ref = result.get("dealReference", "")
+
+                        log_trade(
+                            epic=symbol,
+                            direction=signal,
+                            size=size,
+                            entry_price=entry,
+                            stop_pips=sl,
+                            tp_pips=tp,
+                            deal_ref=deal_ref,
+                        )
+                        notify_trade(signal, symbol, size, entry, sl, tp)
+                        risk.record_trade(symbol)
+                        trades_placed.append(f"{signal} {symbol}")
+
+        except Exception as exc:
+            logger.error("Error on %s: %s", symbol, exc, exc_info=True)
+
+        time.sleep(_SYMBOL_DELAY)
+
+    if trades_placed:
+        logger.info("Trades this pass: %s", " | ".join(trades_placed))
+    else:
+        logger.info("No trades placed this pass")
 
     return True
 
 
 def run_once() -> None:
-    """Single-pass mode: authenticate, evaluate, trade if signal, exit.
-    Designed for GitHub Actions cron — one execution per scheduled trigger."""
+    """Single-pass mode for GitHub Actions cron — runs once then exits."""
     logger.info("=" * 60)
-    logger.info("Forex Bot (single-pass)  |  %s  |  env=%s", SYMBOL, CAPITAL_ENV)
+    logger.info("Forex Bot (single-pass)  |  %d pairs  |  env=%s",
+                len(SYMBOLS), CAPITAL_ENV)
+    logger.info("Pairs: %s", ", ".join(SYMBOLS))
     logger.info("=" * 60)
 
     client = CapitalComClient()
-    risk = RiskManager()
+    risk   = RiskManager()
 
     if not client.authenticate():
         logger.critical("Authentication failed. Exiting.")
@@ -122,11 +144,13 @@ def run_once() -> None:
 def run_bot() -> None:
     """Continuous loop mode for VPS / always-on servers."""
     logger.info("=" * 60)
-    logger.info("Forex Bot (continuous)  |  %s  |  %s  |  env=%s", SYMBOL, TIMEFRAME, CAPITAL_ENV)
+    logger.info("Forex Bot (continuous)  |  %d pairs  |  %s  |  env=%s",
+                len(SYMBOLS), TIMEFRAME, CAPITAL_ENV)
+    logger.info("Pairs: %s", ", ".join(SYMBOLS))
     logger.info("=" * 60)
 
     client = CapitalComClient()
-    risk = RiskManager()
+    risk   = RiskManager()
 
     if not client.authenticate():
         logger.critical("Cannot authenticate. Exiting.")
@@ -137,7 +161,7 @@ def run_bot() -> None:
         risk.set_start_balance(balance)
         logger.info("Opening balance: %.2f", balance)
 
-    notify_startup(SYMBOL, CAPITAL_ENV)
+    notify_startup(f"{len(SYMBOLS)} pairs", CAPITAL_ENV)
 
     consecutive_errors = 0
     keep_alive_counter = 0
@@ -154,8 +178,8 @@ def run_bot() -> None:
             _single_pass(client, risk)
             consecutive_errors = 0
 
-            elapsed = (datetime.now(timezone.utc) - loop_ts).seconds
-            sleep_for = max(LOOP_INTERVAL - elapsed, 60)
+            elapsed    = (datetime.now(timezone.utc) - loop_ts).seconds
+            sleep_for  = max(LOOP_INTERVAL - elapsed, 60)
             logger.info("Next check in %ds", sleep_for)
             time.sleep(sleep_for)
 
