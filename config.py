@@ -16,12 +16,12 @@ _BASE_URLS = {
 API_URL = _BASE_URLS.get(CAPITAL_ENV, _BASE_URLS["demo"])
 
 # ── All pairs traded simultaneously ─────────────────────────────────────────
-# Override via env: SYMBOLS=EURUSD,GBPUSD,XAUUSD
+# Override via env: SYMBOLS=EURUSD,GBPUSD,GOLD
 _default_symbols = (
     "EURUSD,GBPUSD,AUDUSD,NZDUSD,"
     "USDCAD,USDCHF,"
     "USDJPY,EURJPY,GBPJPY,"
-    "XAUUSD,"
+    "GOLD,"
     "US100,US30"
 )
 SYMBOLS: list[str] = os.getenv("SYMBOLS", _default_symbols).split(",")
@@ -53,7 +53,7 @@ PIP_SIZES: dict[str, float] = {
     "USDJPY": 0.01,
     "EURJPY": 0.01,
     "GBPJPY": 0.01,
-    "XAUUSD": 0.1,
+    "GOLD":   0.1,
     "US100":  1.0,
     "US30":   1.0,
 }
@@ -65,7 +65,7 @@ SL_PIPS: dict[str, int] = {
     "EURUSD": 20,  "GBPUSD": 20,  "AUDUSD": 20,  "NZDUSD": 20,
     "USDCAD": 20,  "USDCHF": 20,
     "USDJPY": 20,  "EURJPY": 25,  "GBPJPY": 25,
-    "XAUUSD": 200,              # Gold: $20 move at 0.1/pip
+    "GOLD":   200,              # Gold: $20 move at 0.1/pip
     "US100":  50,  "US30":   50, # Index points
 }
 TP_PIPS: dict[str, int] = {k: v * 2 for k, v in SL_PIPS.items()}
