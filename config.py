@@ -8,9 +8,12 @@ CAPITAL_EMAIL   = os.getenv("CAPITAL_EMAIL", "")
 CAPITAL_PASSWORD = os.getenv("CAPITAL_PASSWORD", "")
 CAPITAL_ENV     = os.getenv("CAPITAL_ENV", "demo")
 
-# Capital.com uses the same API endpoint for demo and live accounts.
-# The account type (demo/live) is determined by which API key you use.
-API_URL = "https://api.capital.com/api/v1"
+# Capital.com API base URLs differ by environment.
+_BASE_URLS = {
+    "demo": "https://demo-api-capital.backend-capital.com/api/v1",
+    "live": "https://api-capital.backend-capital.com/api/v1",
+}
+API_URL = _BASE_URLS.get(CAPITAL_ENV, _BASE_URLS["demo"])
 
 # ── All pairs traded simultaneously ─────────────────────────────────────────
 # Override via env: SYMBOLS=EURUSD,GBPUSD,XAUUSD
