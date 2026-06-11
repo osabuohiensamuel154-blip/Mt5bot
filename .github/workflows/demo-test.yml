@@ -23,19 +23,12 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: DNS + connectivity check
-        run: |
-          echo '=== DNS check ==='
-          nslookup api.capital.com || true
-          echo '=== HTTP ping ==='
-          curl -s -o /dev/null -w 'HTTP %{http_code}\n' https://api.capital.com/api/v1/session || true
-
       - name: Create .env
         run: |
           cat > .env << 'EOF'
-          CAPITAL_API_KEY=JESAjv4ONjdcGSYR
+          CAPITAL_API_KEY=4zHeGVsejC9qcx8r
           CAPITAL_EMAIL=osabuohiensamuel360@gmail.com
-          CAPITAL_PASSWORD=George360.
+          CAPITAL_PASSWORD=George360..
           CAPITAL_ENV=demo
           SYMBOLS=EURUSD,GBPUSD,AUDUSD,NZDUSD,USDCAD,USDCHF,USDJPY,EURJPY,GBPJPY,XAUUSD,US100,US30
           TIMEFRAME=HOUR
