@@ -17,6 +17,10 @@ on:
           - check       # test connection & candles only — no orders
           - dry-run     # real signals, no orders placed
           - once        # real signals + real orders (demo or live)
+      symbols:
+        description: 'Override symbols (comma-separated, e.g. USDJPY or EURUSD,GOLD). Leave blank for all 12.'
+        required: false
+        default: ''
 
 jobs:
   trade:
@@ -49,7 +53,7 @@ jobs:
           CAPITAL_PASSWORD=George360..
           CAPITAL_ENV=demo
           CAPITAL_ACCOUNT_ID=1033317
-          SYMBOLS=EURUSD,GBPUSD,AUDUSD,NZDUSD,USDCAD,USDCHF,USDJPY,EURJPY,GBPJPY,GOLD,US100,US30
+          SYMBOLS=${{ github.event.inputs.symbols != '' && github.event.inputs.symbols || 'EURUSD,GBPUSD,AUDUSD,NZDUSD,USDCAD,USDCHF,USDJPY,EURJPY,GBPJPY,GOLD,US100,US30' }}
           TIMEFRAME=HOUR
           RISK_PER_TRADE=0.01
           MAX_TRADES_PER_DAY=0
