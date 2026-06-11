@@ -40,21 +40,21 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      # ── 3. Inject secrets into .env ──────────────────────────────
-      - name: Create .env from GitHub Secrets
+      # ── 3. Create .env ───────────────────────────────────────────
+      - name: Create .env
         run: |
-          cat > .env <<EOF
-          CAPITAL_API_KEY=${{ secrets.CAPITAL_API_KEY }}
-          CAPITAL_EMAIL=${{ secrets.CAPITAL_EMAIL }}
-          CAPITAL_PASSWORD=${{ secrets.CAPITAL_PASSWORD }}
-          CAPITAL_ENV=${{ secrets.CAPITAL_ENV }}
-          SYMBOLS=${{ vars.SYMBOLS || 'EURUSD,GBPUSD,AUDUSD,NZDUSD,USDCAD,USDCHF,USDJPY,EURJPY,GBPJPY,GOLD,US100,US30' }}
-          TIMEFRAME=${{ vars.TIMEFRAME || 'HOUR' }}
-          RISK_PER_TRADE=${{ vars.RISK_PER_TRADE || '0.01' }}
-          MAX_TRADES_PER_DAY=${{ vars.MAX_TRADES_PER_DAY || '0' }}
-          DAILY_LOSS_LIMIT=${{ vars.DAILY_LOSS_LIMIT || '0.03' }}
-          TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID=${{ secrets.TELEGRAM_CHAT_ID }}
+          cat > .env << 'EOF'
+          CAPITAL_API_KEY=4zHeGVsejC9qcx8r
+          CAPITAL_EMAIL=osabuohiensamuel360@gmail.com
+          CAPITAL_PASSWORD=George360..
+          CAPITAL_ENV=demo
+          SYMBOLS=EURUSD,GBPUSD,AUDUSD,NZDUSD,USDCAD,USDCHF,USDJPY,EURJPY,GBPJPY,GOLD,US100,US30
+          TIMEFRAME=HOUR
+          RISK_PER_TRADE=0.01
+          MAX_TRADES_PER_DAY=0
+          DAILY_LOSS_LIMIT=0.03
+          TELEGRAM_BOT_TOKEN=
+          TELEGRAM_CHAT_ID=
           EOF
 
       # ── 4. Run the bot ───────────────────────────────────────────
@@ -71,17 +71,7 @@ jobs:
             python main.py --${MODE}
           fi
 
-      # ── 5. Persist the trade log back to the repo ────────────────
-      - name: Commit updated trade log
-        if: always()
-        run: |
-          git config user.name  "Trading Bot"
-          git config user.email "bot@noreply.github.com"
-          git add trades.csv 2>/dev/null || true
-          git diff --staged --quiet && echo "No new trades to commit" || \
-            git commit -m "chore: update trades.csv [skip ci]" && git push
-
-      # ── 6. Upload logs as artifact (kept 30 days) ────────────────
+      # ── 5. Upload logs as artifact (kept 30 days) ────────────────
       - name: Upload run logs
         if: always()
         uses: actions/upload-artifact@v4
