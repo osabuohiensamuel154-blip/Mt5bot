@@ -1,7 +1,7 @@
 """Capital.com REST API client with automatic session refresh."""
 import logging
 import requests
-from config import API_URL, CAPITAL_API_KEY, CAPITAL_EMAIL, CAPITAL_PASSWORD
+from config import API_URL, CAPITAL_API_KEY, CAPITAL_EMAIL, CAPITAL_PASSWORD, CAPITAL_ACCOUNT_ID
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +43,26 @@ class CapitalComClient:
             return False
 
         logger.info("Authentication successful")
+
+        if CAPITAL_ACCOUNT_ID:
+            if not self._switch_account(CAPITAL_ACCOUNT_ID):
+                return False
+
+        return True
+
+    def _switch_account(self, account_id: str) -> bool:
+        """Switch the active account for this session."""
+        resp = self._request("PUT", "/session", json={"accountId": account_id})
+        if resp is None or resp.status_code != 200:
+            logger.error("Account switch failed: %s", resp.text[:200] if resp else "no response")
+            return False
+        new_cst = resp.headers.get("CST")
+        new_token = resp.headers.get("X-SECURITY-TOKEN")
+        if new_cst:
+            self._cst = new_cst
+        if new_token:
+            self._security_token = new_token
+        logger.info("Switched to account %s", account_id)
         return True
 
     def keep_alive(self) -> bool:
@@ -98,6 +118,10 @@ class CapitalComClient:
             logger.error("get_account_info failed: %s", resp.text[:200] if resp else "no response")
             return None
         accounts = resp.json().get("accounts", [])
+        if CAPITAL_ACCOUNT_ID:
+            for acc in accounts:
+                if str(acc.get("accountId")) == CAPITAL_ACCOUNT_ID:
+                    return acc
         return accounts[0] if accounts else None
 
     def get_balance(self) -> float | None:
