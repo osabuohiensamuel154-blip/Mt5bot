@@ -51,11 +51,23 @@ class CapitalComClient:
         return True
 
     def _switch_account(self, account_id: str) -> bool:
-        """Switch the active account for this session."""
-        resp = self._request("PUT", "/session", json={"accountId": account_id})
-        if resp is None or resp.status_code != 200:
-            logger.error("Account switch failed: %s", resp.text[:200] if resp else "no response")
-            return False
+        """Switch the active account for this session using a raw request (not _request,
+        to avoid the 401-retry→authenticate recursion loop)."""
+        url = f"{API_URL}/session"
+        try:
+            resp = requests.put(
+                url, json={"accountId": account_id},
+                headers=self._headers(), timeout=_TIMEOUT,
+            )
+        except requests.RequestException as exc:
+            logger.warning("Account switch network error: %s — using default account", exc)
+            return True  # non-fatal: proceed with whatever account the API key owns
+        if resp.status_code not in (200, 204):
+            logger.warning(
+                "Account switch %s: %s — using default account",
+                resp.status_code, resp.text[:200],
+            )
+            return True  # non-fatal
         new_cst = resp.headers.get("CST")
         new_token = resp.headers.get("X-SECURITY-TOKEN")
         if new_cst:
